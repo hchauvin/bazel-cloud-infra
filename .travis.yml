@@ -1,0 +1,38 @@
+sudo: false  # Not needing sudo enables container builds.
+
+python:
+  - "2.7"
+
+language: go
+go: 1.10.x
+install: true
+
+services:
+  - docker
+
+os:
+  - linux
+  # - osx  # TODO: make it work again (problem with Docker container support on Travis)
+
+osx_image: xcode9.3
+
+addons:
+  apt:
+    sources:
+    - sourceline: 'deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8'
+      key_url: 'https://bazel.build/bazel-release.pub.gpg'
+    packages:
+    - bazel
+
+before_install:
+  # xz is currently required by rules_docker
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+        brew update &&
+        ( brew install gcc || brew link --overwrite gcc ) &&
+        brew install xz bazel;
+    fi
+  - go get -u github.com/awslabs/amazon-ecr-credential-helper/ecr-login/cli/docker-credential-ecr-login
+
+script:
+  - echo "build --jobs=4" >> .bazelrc
+  - ./run_tests.sh

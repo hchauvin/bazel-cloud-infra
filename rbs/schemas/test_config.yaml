@@ -1,0 +1,63 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+$schema: http://json-schema.org/draft-06/schema#
+description: Configuration for end-to-end tests.
+type: object
+required: [vpc, region, config, stacks, awslogs_group, lambda]
+properties:
+  vpc:
+    type: object
+    required: [vpc_id, public_subnet1_id]
+    properties:
+      vpc_id:
+        type: string
+      public_subnet1_id:
+        type: string
+  region:
+    type: string
+  config:
+    type: object
+    required: [s3_bucket, s3_key]
+    properties:
+      s3_bucket:
+        type: string
+      s3_key:
+        type: string
+  stacks:
+    type: object
+    required: [infra, lambda, server, workers]
+    patternProperties:
+      ^(infra|lambda|server|workers)$:
+        type: string
+  awslogs_group:
+    type: string
+  lambda:
+    type: object
+    required: [function_name, code_bucket, code_key]
+    properties:
+      function_name:
+        type: string
+      code_bucket:
+        type: string
+      code_key:
+        type: string
+  auth_config:
+    type: object
+    required: [bucket, key]
+    properties:
+      bucket:
+        type: string
+      key:
+        type: string

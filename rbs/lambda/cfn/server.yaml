@@ -1,0 +1,133 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation stack to deploy the remote build server.
+Parameters:
+  StackName:
+    Type: String
+    Description: The name of the infrastructure CloudFormation stack.
+  ServerImage:
+    Type: String
+    Description: The URI of the container image for the server.
+  ServerContainerPort:
+    Type: Number
+    Default: 8098
+    Description: The port to export the remote execution service to.
+  ServerContainerCpu:
+    Type: Number
+    Default: 256
+    Description: |
+      The max CPU usage for the server.
+      See https://aws.amazon.com/fargate/pricing/ for the supported configurations.
+  ServerContainerMemory:
+    Type: Number
+    Default: 512
+    Description: |
+      The max memory usage for the server.
+      See https://aws.amazon.com/fargate/pricing/ for the supported configurations.
+  InstanceDesiredCount:
+    Type: Number
+    Default: 1
+    Description: The number of copies of the service task to run.
+  Role:
+    Type: String
+    Default: ""
+    Description: |
+      (Optional) An IAM role to give the service if the code within needs to
+      access other AWS resources like S3 buckets, DynamoDB tables, etc.
+  LogsGroup:
+    Type: String
+    Description: The Logs group for AWS CloudWatch.
+  LogsRegion:
+    Type: String
+    Description: The Logs region for AWS CloudWatch.
+  CertChain:
+    Type: String
+    NoEcho: true
+    Description: The TLS certificate.
+  PrivateKey:
+    Type: String
+    NoEcho: true
+    Description: The TLS private key, in PKCS8 format.
+  ClientCertChain:
+    Type: String
+    NoEcho: true
+    Description: |
+      The certificate of the TLS certificate authority used for authenticating clients.
+
+Conditions:
+  HasCustomRole: !Not [ !Equals [!Ref "Role", ""] ]
+
+Resources:
+
+  ServerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-BuildFarm-Server
+      Cpu: !Ref "ServerContainerCpu"
+      Memory: !Ref "ServerContainerMemory"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn:
+        Fn::ImportValue:
+          !Join [":", [!Ref "StackName", "ECSTaskExecutionRole"]]
+      TaskRoleArn:
+        Fn::If:
+          - "HasCustomRole"
+          - !Ref "Role"
+          - !Ref "AWS::NoValue"
+      ContainerDefinitions:
+        - Name: !Sub ${AWS::StackName}-BuildFarm-Server
+          Cpu: !Ref "ServerContainerCpu"
+          Memory: !Ref "ServerContainerMemory"
+          Image: !Ref "ServerImage"
+          PortMappings:
+            - ContainerPort: !Ref "ServerContainerPort"
+          Command:
+            - java
+            - -jar
+            - buildfarm-server_deploy.jar
+            - /server.config
+            - !Sub "--port=${ServerContainerPort}"
+            - !Sub "--cert_chain=${CertChain}"
+            - !Sub "--private_key=${PrivateKey}"
+            - !Sub "--client_cert_chain=${ClientCertChain}"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref "LogsGroup"
+              awslogs-region: !Ref "LogsRegion"
+              awslogs-stream-prefix: buildfarm
+
+  ServerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${AWS::StackName}-BuildFarm-Server
+      Cluster:
+        Fn::ImportValue:
+          !Join [":", [!Ref "StackName", "ClusterName"]]
+      LaunchType: FARGATE
+      DesiredCount: !Ref 'InstanceDesiredCount'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - Fn::ImportValue:
+                !Join [":", [!Ref "StackName", "ServerFargateContainerSecurityGroup"]]
+          Subnets:
+            - Fn::ImportValue:
+                !Join [":", [!Ref "StackName", "PublicSubnet1"]]
+      TaskDefinition: !Ref "ServerTaskDefinition"

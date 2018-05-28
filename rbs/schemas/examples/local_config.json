@@ -1,0 +1,5 @@
+{
+  "region": "eu-west-1",
+  "s3_bucket": "<example bucket>",
+  "s3_key": "<example key for config.json>"
+}

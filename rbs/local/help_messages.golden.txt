@@ -1,0 +1,128 @@
+============
+--help
+------------
+
+usage: bazel_bf {-h,--help,setup,remote,teardown,options,...} ...
+
+Wrapper around Bazel for remote and multi-platform execution.
+
+-h, --help  Show this help message and exit.
+setup       Set up the remote environment.
+remote      Describe and control the remote environment.
+teardown    Tear down the remote environment entirely.
+options     Show the remote execution options.
+...         Execute Bazel.  Type "bazel_bf options" to show the remote options.
+            Example: "bazel_bf --workers=10 build //..."
+
+
+
+============
+setup --help
+------------
+usage: bazel_bf setup [-h] [--region REGION] [--s3_bucket S3_BUCKET]
+                      [--s3_key S3_KEY]
+
+Set up the remote environment. Specify --region, --s3_bucket and --s3_key to
+specify a remote config for the first time. (After bazel_bf setup has been
+called, this info is stored in the local config file
+"~/.bazel_bf/config.json").
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --region REGION
+  --s3_bucket S3_BUCKET
+  --s3_key S3_KEY
+
+
+============
+remote --help
+------------
+usage: bazel_bf remote [-h] {status,down,up} ...
+
+Describe and control the remote environment.
+
+positional arguments:
+  {status,down,up}
+
+optional arguments:
+  -h, --help        show this help message and exit
+
+
+============
+remote status --help
+------------
+usage: bazel_bf remote status [-h]
+
+Get the status of the remote environment.
+
+optional arguments:
+  -h, --help  show this help message and exit
+
+
+============
+remote down --help
+------------
+usage: bazel_bf remote down [-h] [--to TO]
+
+Downscale the remote environment.
+
+optional arguments:
+  -h, --help  show this help message and exit
+  --to TO     maximum worker count (default: 0)
+
+
+============
+remote up --help
+------------
+usage: bazel_bf remote up [-h] [--to TO] [--force_update]
+
+Upscale the remote environment.
+
+optional arguments:
+  -h, --help      show this help message and exit
+  --to TO         minimum worker count (default: 2)
+  --force_update  update the remote build system even if the worker count is
+                  the same (default: False)
+
+
+============
+teardown --help
+------------
+usage: bazel_bf teardown [-h] [--force]
+
+Tear down the remote environment entirely.
+
+optional arguments:
+  -h, --help  show this help message and exit
+  --force
+
+
+============
+options
+------------
+usage: bazel_bf [-h] [--workers WORKERS] [--force_update] [--local]
+                [--privileged] [--remote_executor REMOTE_EXECUTOR]
+                [--crosstool_top CROSSTOOL_TOP] [--bazel_bin BAZEL_BIN]
+
+Remote execution options. Example Bazel invocation: "bazel_bf --workers=10
+build //..."
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --workers WORKERS     minimum number of workers (default: None)
+  --force_update        update the remote build system even if the worker
+                        count is the same (default: False)
+  --local               use a local Docker execution strategy instead of going
+                        remote (default: False)
+  --privileged          run the Docker containers in privileged mode (default:
+                        False)
+  --remote_executor REMOTE_EXECUTOR
+                        an explicit remote executor address (else derived from
+                        config) (default: None)
+  --crosstool_top CROSSTOOL_TOP
+                        an explicit crosstool top to use (else derived from
+                        config) (default: None)
+  --bazel_bin BAZEL_BIN
+                        path to the Bazel binary (default: bazel)
+
+

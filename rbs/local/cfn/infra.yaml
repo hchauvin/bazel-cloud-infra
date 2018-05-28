@@ -1,0 +1,319 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  CloudFormation stack for the Remote Build System infrastructure.
+
+  This stack requires heightened privileges as it sets up, for instance, IAM roles and
+  security groups.
+  
+  Either an existing VPC must be provided (see the `VpcID` and `PublicSubnet1ID` parameters),
+  or a new VPC is created, in which case the IP ranges must be provided through `VpcCIDR`
+  and `PublicSubnet1CIDR`.
+Parameters:
+  VpcCIDR: 
+    Description: The IP range (CIDR notation) for the VPC, or "" to avoid creating a VPC.
+    Default: ""
+    Type: String
+  PublicSubnet1CIDR:
+    Description: The IP range (CIDR notation) for the public subnet, or "" to avoid creating a VPC.
+    Default: ""
+    Type: String
+  VpcID:
+    Description: The ID of the existing VPC, if no VPC is to be created.
+    Default: ""
+    Type: String
+  PublicSubnet1ID:
+    Description: The ID of the first public subnet, if no VPC is to be created.
+    Default: ""
+    Type: String
+  SimpleAuthS3ObjectArn:
+    Description: |
+      The ARN of the S3 object containing the configuration for Simple Authentication,
+      or "" to disable Simple Authentication.
+    Default: ""
+    Type: String
+  LambdaFunctionName:
+    Description: |
+      The name of the Lambda function.  We need it in the infrastructure CloudFormation 
+      stack to set up the proper permissions.
+    Type: String
+  ServerStack:
+    Type: String
+  WorkersStack:
+    Type: String
+Rules:
+  VPCIsSpecified:
+    Assertions:
+      - Assert: !Or [ !Not [ !Equals [ !Ref VpcCIDR, "" ] ], !Not [ !Equals [ !Ref VpcID, "" ] ] ]
+        AssertDescription: Either VpcCIDR or VpcID must be specified.
+  newVPC:
+    RuleCondition: !Not [ !Equals [ !Ref VpcCIDR, "" ] ]
+    Assertions:
+      - Assert: !Equals [ !Ref VpcID, "" ]
+        AssertDescription: If VpcCIDR is specified, VpcID must be left empty.
+      - Assert: !Equals [ !Ref PublicSubnet1ID, "" ]
+        AssertDescription: If VpcCIDR is specified, PublicSubnet1ID must be left empty.
+      - Assert: !Not [ !Equals [ !Ref PublicSubnet1CIDR, "" ] ]
+        AssertDescription: If VpcCIDR is specified, PublicSubnet1CIDR must be specified as well.
+  existingVPC:
+    RuleCondition: !Not [ !Equals [ !Ref VpcID, "" ] ]
+    Assertions:
+      - Assert: !Not [ !Equals [ !Ref PublicSubnet1ID, "" ] ]
+        AssertDescription: If VpcID is specified, PublicSubnet1ID must be specified as well.
+      - Assert: !Equals [ !Ref PublicSubnet1CIDR, "" ]
+        AssertDescription: If VpcID is specified, PublicSubnet1CIDR must be left empty.
+Conditions:
+  # Whether to create a VPC
+  CreateVPC: !Not [ !Equals [ !Ref VpcCIDR, "" ] ]
+  # Whether Simple Authentication is used
+  SimpleAuthUsed: !Not [ !Equals [ !Ref SimpleAuthS3ObjectArn, "" ] ]
+Resources:
+  # ================================================================================================
+  # VPC
+  # ================================================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateVPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      Tags: 
+        - Key: Name 
+          Value: !Ref AWS::StackName
+            
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateVPC
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+            
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateVPC
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1: 
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${AWS::StackName} Public Subnet (AZ1)
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVPC
+    Properties: 
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${AWS::StackName} Public Routes
+
+  DefaultPublicRoute: 
+    Type: AWS::EC2::Route
+    Condition: CreateVPC
+    DependsOn: InternetGatewayAttachment
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVPC
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  # ================================================================================================
+  # Roles
+  # ================================================================================================
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Description: |
+      The role used by the AWS Lambda function.  This role allows 1) the
+      function itself to log to CloudWatch Logs, 2) the function to directly
+      access some AWS resources, 3) the function to run CloudFormation with
+      the proper permissions.
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [lambda.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: OwnLogs
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - "logs:CreateLogStream"
+            - "logs:DescribeLogStreams"
+            - "logs:PutLogEvents"
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${LambdaFunctionName}
+      - PolicyName: DirectAccess
+        PolicyDocument:
+          Statement:
+          - !If
+            - SimpleAuthUsed
+            - Effect: Allow
+              Action:
+              - "s3:GetObject"
+              Resource: !Ref SimpleAuthS3ObjectArn
+            - !Ref AWS::NoValue
+          - Effect: Allow
+            Action:
+            - "ec2:DescribeNetworkInterfaces"
+            - "ecs:ListTasks"
+            - "ecs:DescribeTasks"
+            Resource: "*"
+      - PolicyName: CloudFormation
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - "cloudformation:*"
+            Resource:
+            - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ServerStack}/*
+            - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/${ServerStack}-ChangeSet-*/*
+            - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${WorkersStack}/*
+            - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/${WorkersStack}-ChangeSet-*/*
+          - Effect: Allow
+            Action:
+            - "iam:ListInstanceProfiles"
+            - "iam:ListRoles"
+            - "iam:PassRole"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - "ecs:*"
+            Resource: "*"
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Description: The role used by the ECS tasks themselves.
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ecs-tasks.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: AmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # Allow the ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+
+                # Allow the ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+              Resource: '*'
+
+  # ================================================================================================
+  # Security groups
+  # ================================================================================================
+
+  ServerFargateContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Description: The security group for the RBS server.
+    Properties: 
+      VpcId: !If [ CreateVPC, !Ref VPC, !Ref VpcID ]
+      GroupDescription: Access to the Build Farm server
+      SecurityGroupIngress:
+        # Access to the Build Farm server
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: "8098"
+          ToPort: "8098"
+      Tags: 
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Server
+
+  WorkerFargateContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Description: The security group for the RBS workers.
+    Properties: 
+      VpcId: !If [ CreateVPC, !Ref VPC, !Ref VpcID ]
+      GroupDescription: Closed
+      SecurityGroupIngress: []
+      Tags: 
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Worker
+
+  # ================================================================================================
+  # Other resources
+  # ================================================================================================
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Description: The ECS cluster where the RBS server and workers are put.
+
+# These are the values output by the CloudFormation template. Be careful
+# about changing any of them, because of them are exported with specific
+# names so that the other task related CF templates can use them.
+Outputs:
+  ClusterName:
+    Description: The name of the ECS cluster
+    Value: !Ref 'ECSCluster'
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'ClusterName' ] ]
+  ServerFargateContainerSecurityGroup:
+    Value: !Ref 'ServerFargateContainerSecurityGroup'
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'ServerFargateContainerSecurityGroup' ] ]
+  WorkerFargateContainerSecurityGroup:
+    Value: !Ref 'WorkerFargateContainerSecurityGroup'
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'WorkerFargateContainerSecurityGroup' ] ]
+  LambdaRole:
+    Description: The ARN for the Lambda function
+    Value: !GetAtt 'LambdaRole.Arn'
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'LambdaRole' ] ]
+  ECSTaskExecutionRole:
+    Description: The ARN of the ECS role
+    Value: !GetAtt 'ECSTaskExecutionRole.Arn'
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'ECSTaskExecutionRole' ] ]
+  VPCId:
+    Description: The ID of the VPC that this stack is deployed in
+    Value: !If [ CreateVPC, !Ref VPC, !Ref VpcID ]
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'VPCId' ] ]
+  PublicSubnet1:
+    Description: Public subnet one
+    Value: !If [ CreateVPC, !Ref PublicSubnet1, !Ref PublicSubnet1ID ]
+    Export:
+      Name: !Join [ ':', [ !Ref 'AWS::StackName', 'PublicSubnet1' ] ]

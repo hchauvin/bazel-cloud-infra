@@ -1,0 +1,116 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  CloudFormation stack for the AWS Lambda function.
+
+  It is written in the [AWS Serverless Application Model][SAM] format.
+
+  The Lambda function code is provided should be provided as a zip file.
+  
+  [SAM]: https://github.com/awslabs/serverless-application-model
+Parameters:
+  Role:
+    Type: String
+    Description: ARN of an IAM role to use as this function's execution role.
+  FunctionName:
+    Type: String
+    Default: ControlBuildInfra
+    Description: A name for the Lambda function.
+  CodeS3Bucket:
+    Type: String
+    Description: S3 Bucket where the Lambda function code is located.
+  CodeS3Key:
+    Type: String
+    Description: S3 Key within the given bucket where the Lambda function code is located.
+  CodeS3ObjectVersion:
+    Type: String
+    Description: Version of the S3 object containing the Lambda function code.
+  LambdaConfig:
+    Type: String
+    Description: |
+      JSON-serialized configuration passed as an environment variable to the Lambda function.
+  Debug:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Debug mode.
+Globals:
+  Function:
+    Timeout: 10  # seconds
+    Runtime: python2.7
+    Handler: handler.lambda_handler
+Resources:
+  Lambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref 'FunctionName'
+      Description: Remote Build System controller.
+      Role: !Ref 'Role'
+      CodeUri:
+        Bucket: !Ref 'CodeS3Bucket'
+        Key: !Ref 'CodeS3Key'
+        Version: !Ref 'CodeS3ObjectVersion'
+      Environment:
+        Variables:
+          CONFIG: !Ref 'LambdaConfig'
+          DEBUG: !Ref 'Debug'
+      Events:
+        Gateway:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /ControlBuildInfra/{action}
+            Method: get
+  # NOTE: See https://github.com/awslabs/serverless-application-model/issues/25
+  # Track https://github.com/awslabs/serverless-application-model/issues/248
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Ref AWS::StackName
+      StageName: Prod
+      DefinitionBody: !Sub |
+        ---
+        swagger: "2.0"
+        info:
+          version: "1.0"
+          title: ${AWS::StackName}
+        basePath: "/Prod"
+        schemes:
+        - "https"
+        paths:
+          /ControlBuildInfra/{action}:
+            # See Python module `rbs.local.infra_api` for more details.
+            get:
+              security:
+              - sigv4: []
+              responses: {}
+              x-amazon-apigateway-integration:
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}/invocations"
+                passthroughBehavior: "when_no_match"
+                httpMethod: "POST"
+                type: "aws_proxy"
+        securityDefinitions:
+          sigv4:
+            type: "apiKey"
+            name: "Authorization"
+            in: "header"
+            x-amazon-apigateway-authtype: "awsSigv4"
+
+Outputs:
+  RestapiId:
+    Description: The ID of the REST API
+    Value: !Ref 'ApiGatewayApi'

@@ -1,0 +1,7 @@
+{
+  "ca_crt": "<certificate>",
+  "server_crt": "<certificate>",
+  "client_crt": "<certificate>",
+  "server_pkcs8_key": "<pkcs8 key>",
+  "client_pkcs8_key": "<pkcs8 key>"
+}
