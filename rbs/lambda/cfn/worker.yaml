@@ -1,0 +1,135 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation stack to deploy the remote build workers.
+Parameters:
+  StackName:
+    Type: String
+    Description: The name of the infrastructure CloudFormation stack.
+  WorkerImage:
+    Type: String
+    Description: The URI of the container image for the worker.
+  WorkerContainerCpu:
+    Type: Number
+    Default: 256
+    Description: |
+      The max CPU usage for each worker.
+      See https://aws.amazon.com/fargate/pricing/ for the supported configurations.
+  WorkerContainerMemory:
+    Type: Number
+    Default: 512
+    Description: |
+      The max memory usage for each worker.
+      See https://aws.amazon.com/fargate/pricing/ for the supported configurations.
+  InstanceDesiredCount:
+    Type: Number
+    Default: 2
+    Description: How many copies of the service task to run
+  Role:
+    Type: String
+    Default: ""
+    Description: |
+      (Optional) An IAM role to give the workers if the code within needs to
+      access other AWS resources like S3 buckets, DynamoDB tables, etc.
+  ServerIP:
+    Type: String
+    Default: ""
+  LogsGroup:
+    Type: String
+    Description: The Logs group for AWS CloudWatch.
+  LogsRegion:
+    Type: String
+    Description: The Logs region for AWS CloudWatch.
+  TrustCertCollection:
+    Type: String
+    NoEcho: true
+    Description: |
+      The certificates used to trust the RBS servers.
+  ClientPrivateKey:
+    Type: String
+    NoEcho: true
+    Description: The TLS private key, in PKCS8 format.
+  WorkerCertChain:
+    Type: String
+    NoEcho: true
+    Description: The TLS certificate.
+
+Conditions:
+  HasCustomRole: !Not [ !Equals [!Ref 'Role', ''] ]
+
+Resources:
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-BuildFarm-Worker
+      Cpu: !Ref 'WorkerContainerCpu'
+      Memory: !Ref 'WorkerContainerMemory'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn:
+        Fn::ImportValue:
+          !Join [":", [!Ref "StackName", "ECSTaskExecutionRole"]]
+      TaskRoleArn:
+        Fn::If:
+          - 'HasCustomRole'
+          - !Ref 'Role'
+          - !Ref "AWS::NoValue"
+      ContainerDefinitions:
+        - Name: !Sub ${AWS::StackName}-BuildFarm-Server
+          Cpu: !Ref 'WorkerContainerCpu'
+          Memory: !Ref 'WorkerContainerMemory'
+          Image: !Ref 'WorkerImage'
+          Command:
+            - java
+            - -jar
+            - buildfarm-worker_deploy.jar
+            - /worker.config
+            - !Sub "--operation_queue=${ServerIP}:8098"
+            - !Sub "--trust_cert_collection=${TrustCertCollection}"
+            - !Sub "--client_private_key=${ClientPrivateKey}"
+            - !Sub "--client_cert_chain=${WorkerCertChain}"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref "LogsGroup"
+              awslogs-region: !Ref "LogsRegion"
+              awslogs-stream-prefix: buildfarm
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${AWS::StackName}-BuildFarm-Worker
+      Cluster:
+        Fn::ImportValue:
+          !Join [':', [!Ref 'StackName', 'ClusterName']]
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref 'InstanceDesiredCount'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          # Necessary!  Otherwise you need a NAT
+          # https://github.com/aws/amazon-ecs-agent/issues/1128
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - Fn::ImportValue:
+                !Join [":", [!Ref "StackName", "WorkerFargateContainerSecurityGroup"]]
+          Subnets:
+            - Fn::ImportValue:
+                !Join [':', [!Ref 'StackName', 'PublicSubnet1']]
+      TaskDefinition: !Ref 'WorkerTaskDefinition'

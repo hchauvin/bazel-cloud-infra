@@ -1,0 +1,31 @@
+{
+  "awslogs_group": "example-log-group",
+  "awslogs_region": "eu-west-1",
+  "region": "eu-west-1",
+  "server_image": "<example server image>",
+  "worker_image": "<example worker image>",
+  "stacks": {
+    "infra": "example-stack-name",
+    "lambda": "example-stack-name",
+    "server": "example-stack-name",
+    "workers": "example-stack-name"
+  },
+  "crosstool_top": "@bazel_toolchains//configs/debian8_clang/0.3.0/bazel_0.13.0/default:toolchain",
+  "lambda": {
+    "function_name": "example-function-name",
+    "code_bucket": "example-s3-bucket",
+    "code_key": "example-s3-key"
+  },
+  "vpc": {
+    "new": {
+      "vpc_cidr": "10.192.0.0/16",
+      "public_subnet1_cidr": "10.192.10.0/24"
+    }
+  },
+  "auth": {
+    "simple": {
+      "bucket": "example-s3-bucket",
+      "key": "example-s3-key"
+    }
+  }
+}

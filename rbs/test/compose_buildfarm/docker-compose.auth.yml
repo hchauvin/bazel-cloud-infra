@@ -1,0 +1,42 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: "3.3"
+services:
+  buildfarm-server:
+    image: "${SERVER_IMAGE}"
+    command:
+      - java
+      - -jar
+      - buildfarm-server_deploy.jar
+      - /server.config
+      - --port
+      - "8098"
+      - "--cert_chain=${CERT_CHAIN}"
+      - "--private_key=${PRIVATE_KEY}"
+      - "--client_cert_chain=${CLIENT_CERT_CHAIN}"
+    ports:
+      - 8098
+  buildfarm-worker:
+    image: "${WORKER_IMAGE}"
+    restart: always
+    command:
+      - java
+      - -jar
+      - buildfarm-worker_deploy.jar
+      - /worker.config
+      - "--operation_queue=buildfarm-server:8098"
+      - "--trust_cert_collection=${TRUST_CERT_COLLECTION}"
+      - "--client_private_key=${CLIENT_PRIVATE_KEY}"
+      - "--client_cert_chain=${WORKER_CERT_CHAIN}"

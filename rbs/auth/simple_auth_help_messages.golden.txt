@@ -1,0 +1,46 @@
+============
+--help
+------------
+usage: simple_auth [-h] {folder,config} ...
+
+Helpers for the Simple Authentication mode of the Remote Build System.
+
+positional arguments:
+  {folder,config}
+    config         Configure simple authentication by setting the remote S3
+                   description file. The S3 object location is either
+                   specified using the command-line options, or derived from
+                   the local config, if present.
+
+optional arguments:
+  -h, --help       show this help message and exit
+
+
+============
+folder --help
+------------
+usage: simple_auth folder [-h] folder_filename
+
+Output the certificates/keys to the given folder.
+
+positional arguments:
+  folder_filename  output folder.
+
+optional arguments:
+  -h, --help       show this help message and exit
+
+
+============
+config --help
+------------
+usage: simple_auth config [-h] [--region REGION] [--s3_bucket S3_BUCKET]
+                          [--s3_key S3_KEY]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --region REGION       AWS region for the S3 object
+  --s3_bucket S3_BUCKET
+                        bucket for the S3 object
+  --s3_key S3_KEY       key for the S3 object
+
+

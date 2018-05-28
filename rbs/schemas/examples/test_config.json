@@ -1,0 +1,27 @@
+{
+  "vpc": {
+    "vpc_id": "<vpc id>",
+    "public_subnet1_id": "<subnet id>"
+  },
+  "region": "eu-west-1",
+  "config": {
+    "s3_bucket": "example-s3-bucket",
+    "s3_key": "example-s3-key/test_config-{test_id}.json"
+  },
+  "stacks": {
+    "infra": "example-infra-{test_id}",
+    "lambda": "example-lambda-{test_id}",
+    "server": "example-server-{test_id}",
+    "workers": "example-workers-{test_id}"
+  },
+  "awslogs_group": "example-erb-{test_id}",
+  "lambda": {
+    "function_name": "example-function-{test_id}",
+    "code_bucket": "example-s3-bucket",
+    "code_key": "example-s3-key"
+  },
+  "auth_config": {
+    "bucket": "example-s3-bucket",
+    "key": "example-s3-key/test_auth_config-{test_id}.json"
+  }
+}

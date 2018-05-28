@@ -1,0 +1,125 @@
+# Copyright 2018 The Bazel Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+$schema: http://json-schema.org/draft-06/schema#
+title: Main configuration object.
+type: object
+required:
+  - awslogs_group
+  - awslogs_region
+  - region
+  - server_image
+  - worker_image
+  - stacks
+  - crosstool_top
+  - lambda
+  - vpc
+  # auth is not required
+properties:
+  awslogs_group:
+    type: string
+    title: The Logs group for AWS CloudWatch.
+  awslogs_region:
+    type: string
+    title: The Logs region for AWS CloudWatch.
+  region:
+    type: string
+    title: The region for all AWS resources if applicable and if not otherwise specified.
+  server_image:
+    type: string
+    title: The URI of the container image for the build server.
+  worker_image:
+    type: string
+    title: The URI of the container image for the build worker.
+  stacks:
+    type: object
+    title: The names of the CloudFormation stacks.
+    description: |
+      `infra` - the base stack. It requires heightened privileges as it sets up, for
+      instance, IAM roles and security groups.
+      `lambda` - the stack for the Lambda function.
+      `server` - the stack for the build server.
+      `workers` - the stack for the build workers.
+
+      `infra` and `lambda` are managed by `bazel_bf setup`, `server` and `workers` are
+      managed by the Lambda function.
+    required: [infra, lambda, server, workers]
+    patternProperties:
+      ^(infra|lambda|server|workers)$:
+        type: string
+  crosstool_top:
+    type: string
+    title: The crosstool to go with the build workers.
+  lambda:
+    type: object
+    title: Parameters for the Lambda function itself.
+    required: [function_name, code_bucket, code_key]
+    properties:
+      function_name:
+        type: string
+        title: The name of the function.
+      code_bucket:
+        type: string
+        title: S3 bucket where to store the code archive (zip file).
+      code_key:
+        type: string
+        title: S3 key where to store the code archive (zip file).
+  vpc:
+    title: Configuration of the VPC for the containers.
+    description: |
+      The key below "vpc" gives a configuration option.
+    oneOf:
+      - type: object
+        required: [new]
+        properties:
+          new:
+            type: object
+            required: [vpc_cidr, public_subnet1_cidr]
+            properties:
+              vpc_cidr:
+                type: string
+              public_subnet1_cidr:
+                type: string
+      - type: object
+        required: [existing]
+        properties:
+          existing:
+            type: object
+            required: [vpc_id, public_subnet1_id]
+            properties:
+              vpc_id:
+                type: string
+              public_subnet1_id:
+                type: string
+  auth:
+    title: Configuration of the authentication mechanism.
+    description: |
+      The key below "auth" gives a configuration option.
+    oneOf:
+      - type: object
+        required: [simple]
+        properties:
+          simple:
+            type: object
+            title: Simple Authentication
+            description: |
+              In Simple Authentication, the TLS certificates for mutual authentication
+              are static and stored at the cluster creation in an S3 object with
+              encryption at rest.
+            required: [bucket, key]
+            properties:
+              bucket:
+                type: string
+              key:
+                type: string
